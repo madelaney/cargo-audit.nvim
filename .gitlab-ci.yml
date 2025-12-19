@@ -1,0 +1,24 @@
+---
+spec:
+  inputs:
+    interruptible:
+      type: boolean
+      default: true
+
+---
+default:
+  interruptible: $[[ inputs.interruptible ]]
+
+stages:
+  - test
+
+test:style:
+  stage: test
+  tags:
+    - aarch64
+  image:
+    name: balenalib/aarch64-alpine:latest
+    pull_policy: if-not-present
+  script:
+    - apk add stylua make
+    - stylua --check .

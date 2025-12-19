@@ -1,23 +1,21 @@
 local M = {}
 
-M.cargo_toml_ns = vim.api.nvim_create_namespace("cargo_toml")
-M.cargo_lock_ns = vim.api.nvim_create_namespace("cargo_lock")
+M.cargo_toml_ns = vim.api.nvim_create_namespace('cargo_toml')
+M.cargo_lock_ns = vim.api.nvim_create_namespace('cargo_lock')
 
 function M.setup(opts)
   M.opts = opts or {}
 
-  vim.api.nvim_create_autocmd({ "BufWritePost", "BufReadPost" }, {
-    pattern = "Cargo.toml",
+  vim.api.nvim_create_autocmd({ 'BufWritePost', 'BufReadPost' }, {
+    pattern = 'Cargo.toml',
     callback = function()
-      -- M.run_cargo_audit()
       M.cargo_toml_audit()
     end,
   })
 
-  vim.api.nvim_create_autocmd({ "BufReadPost", "FileChangedShellPost" }, {
-    pattern = "Cargo.lock",
+  vim.api.nvim_create_autocmd({ 'BufReadPost', 'FileChangedShellPost' }, {
+    pattern = 'Cargo.lock',
     callback = function()
-      -- M.run_diagnostics()
       M.cargo_lock_audit()
     end,
   })
@@ -36,9 +34,9 @@ function M.find_dependency_lnum(cargo_toml, package_name)
   local in_deps_section = false
 
   for i, line in ipairs(lines) do
-    local section = line:match("^%s*%[(.-)%]%s*$")
+    local section = line:match('^%s*%[(.-)%]%s*$')
     if section then
-      in_deps_section = (section == "dependencies" or section == "dev-dependencies" or section == "build-dependencies")
+      in_deps_section = (section == 'dependencies' or section == 'dev-dependencies' or section == 'build-dependencies')
     end
 
     if in_deps_section then
@@ -46,7 +44,7 @@ function M.find_dependency_lnum(cargo_toml, package_name)
       -- serde = "1.0"
       -- serde = { version = "1.0" }
       -- serde = { git = "...", rev = "..." }
-      if line:match("^%s*" .. package_name .. "%s*=") then
+      if line:match('^%s*' .. package_name .. '%s*=') then
         return i - 1
       end
     end
@@ -57,7 +55,7 @@ end
 
 function M.find_file(file, parent)
   for path in vim.fs.parents(parent) do
-    local cargo = path .. "/" .. file
+    local cargo = path .. '/' .. file
     if vim.fn.filereadable(cargo) == 1 then
       return cargo
     end
@@ -69,14 +67,14 @@ end
 ---@param start string Directory to start looking for a Cargo.toml for
 ---@return string|nil The path to Cargo.toml or nil
 function M.find_cargo_toml(start)
-  return M.find_file("Cargo.toml", start)
+  return M.find_file('Cargo.toml', start)
 end
 
 --- Search up the tree for a Cargo.lock
 ---@param start string Directory to start looking for a Cargo.lock for
 ---@return string|nil The path to Cargo.lock or nil
 function M.find_cargo_lock(start)
-  return M.find_file("Cargo.lock", start)
+  return M.find_file('Cargo.lock', start)
 end
 
 --- Convert `cargo-audit` json to diagnostics table
@@ -96,7 +94,7 @@ function M.advisories_to_diagnostics(cargo, report)
 
   M.lines = M.read_file(cargo)
   for i, line in ipairs(M.lines) do
-    if line == "[dependencies]" then
+    if line == '[dependencies]' then
       dependencies = i - 1
     end
   end
@@ -112,30 +110,30 @@ function M.advisories_to_diagnostics(cargo, report)
       end_col = 0,
       severity = vim.diagnostic.severity.WARN,
       message = string.format(
-        "[%s] %s (pkg: %s %s)",
-        advisory.id or "UNKNOWN",
-        advisory.title or "No title",
-        pkg.name or "unknown",
-        pkg.version or "unknown"
+        '[%s] %s (pkg: %s %s)',
+        advisory.id or 'UNKNOWN',
+        advisory.title or 'No title',
+        pkg.name or 'unknown',
+        pkg.version or 'unknown'
       ),
-      source = "cargo-audit",
+      source = 'cargo-audit',
     })
   end
 
   local advisories = {
     yanked = {
-      message = "Package %s %s has been YANKED from crates.io",
+      message = 'Package %s %s has been YANKED from crates.io',
       severity = vim.diagnostic.severity.WARN,
     },
     unsound = {
       severity = vim.diagnostic.severity.HINT,
     },
     unmaintained = {
-      message = "Package %s is not maintained on crates.io",
+      message = 'Package %s is not maintained on crates.io',
       severity = vim.diagnostic.severity.WARN,
     },
     other = {
-      message = "Cargo-audit warning for %s %s: %s",
+      message = 'Cargo-audit warning for %s %s: %s',
       severity = vim.diagnostic.severity.HINT,
     },
   }
@@ -147,18 +145,27 @@ function M.advisories_to_diagnostics(cargo, report)
       local pkg = entry.package or {}
       local advisory = entry.advisory or {}
 
-      local name = pkg.name or "unknown"
-      local version = pkg.version or "unknown"
+      local name = pkg.name or 'unknown'
+      local version = pkg.version or 'unknown'
 
       local lnum = M.find_dependency_lnum(cargo, name) or 0
+
+      local message
+      if key == 'yanked' then
+        message = config.message:format(version, name)
+      elseif key == 'unmaintained' then
+        message = config.message:format(name)
+      else
+        message = string.format('%s %s', version, advisory.title)
+      end
 
       table.insert(diags, {
         lnum = lnum,
         end_lnum = lnum,
         col = 0,
         severity = config.severity,
-        message = string.format("%s %s", version, advisory.title),
-        source = "cargo-audit",
+        message = message,
+        source = 'cargo-audit',
       })
     end
   end
@@ -175,19 +182,19 @@ function M.cargo_toml_audit()
   --- since this is triggered by a nvim_create_autocmd event on the Cargo.toml,
   --- it's unlikely we won't find a Cargo.toml but lets be sure.
   if not cargo_toml then
-    vim.notify("cargo-audit: Could not find Cargo.toml", vim.log.levels.ERROR)
+    vim.notify('cargo-audit: Could not find Cargo.toml', vim.log.levels.ERROR)
     return
   --- Cargo.lock may *not* be in the same directory as Cargo.toml so we'll have
   --- to search the tree for a Cargo.lock
   elseif not cargo_lock then
-    vim.notify("cargo-audit: Could not find Cargo.lock", vim.log.levels.ERROR)
+    vim.notify('cargo-audit: Could not find Cargo.lock', vim.log.levels.ERROR)
     return
   end
 
-  vim.system({ "cargo", "audit", "--json", "--file", cargo_lock }, { text = true }, function(res)
+  vim.system({ 'cargo', 'audit', '--json', '--file', cargo_lock }, { text = true }, function(res)
     if res.code ~= 0 and res.code ~= 1 then
       vim.schedule(function()
-        vim.notify("cargo-audit failed: " .. res.stderr, vim.log.levels.ERROR)
+        vim.notify('cargo-audit failed: ' .. res.stderr, vim.log.levels.ERROR)
       end)
       return
     end
@@ -199,7 +206,7 @@ function M.cargo_toml_audit()
 
     if not decoded then
       vim.schedule(function()
-        vim.notify("cargo-audit: failed to parse JSON", vim.log.levels.ERROR)
+        vim.notify('cargo-audit: failed to parse JSON', vim.log.levels.ERROR)
       end)
       return
     end
@@ -208,7 +215,7 @@ function M.cargo_toml_audit()
 
     vim.schedule(function()
       vim.diagnostic.set(M.cargo_toml_ns, 0, diagnostics, {})
-      vim.notify("cargo-audit: diagnostics updated", vim.log.levels.INFO)
+      vim.notify('cargo-audit: diagnostics updated', vim.log.levels.INFO)
     end)
   end)
 end
@@ -219,7 +226,7 @@ end
 function M.read_file(path)
   local uv = vim.uv or vim.loop
 
-  local fd = uv.fs_open(path, "r", 438)
+  local fd = uv.fs_open(path, 'r', 438)
   if not fd then
     return {}
   end
@@ -238,7 +245,7 @@ function M.read_file(path)
   end
 
   local lines = {}
-  for line in data:gmatch("([^\n]*)\n?") do
+  for line in data:gmatch('([^\n]*)\n?') do
     table.insert(lines, line)
   end
   return lines
@@ -293,14 +300,14 @@ function M.build_diagnostics(packages, audits)
         lnum = match.line - 1, -- 0-based for diagnostics
         col = 0,
         severity = vim.diagnostic.severity.WARN,
-        source = "cargo-audit",
+        source = 'cargo-audit',
         message = string.format(
-          "Vulnerability %s: %s (%s %s)\n%s",
+          'Vulnerability %s: %s (%s %s)\n%s',
           vuln.advisory.id,
-          vuln.advisory.title or "",
+          vuln.advisory.title or '',
           name,
           version,
-          vuln.advisory.description or ""
+          vuln.advisory.description or ''
         ),
       })
     end
@@ -315,14 +322,14 @@ function M.cargo_lock_audit()
 
   local lock_str = M.read_file_as_str(lockfile)
   if not lock_str then
-    vim.notify("cargo-audit: Could not read " .. lockfile, vim.log.levels.ERROR)
+    vim.notify('cargo-audit: Could not read ' .. lockfile, vim.log.levels.ERROR)
     return
   end
 
-  vim.system({ "cargo", "audit", "--json", "--file", lockfile }, { text = true }, function(res)
+  vim.system({ 'cargo', 'audit', '--json', '--file', lockfile }, { text = true }, function(res)
     if res.code ~= 0 and res.code ~= 1 then
       vim.schedule(function()
-        vim.notify("cargo-audit failed: " .. res.stderr, vim.log.levels.ERROR)
+        vim.notify('cargo-audit failed: ' .. res.stderr, vim.log.levels.ERROR)
       end)
       return
     end
@@ -334,28 +341,28 @@ function M.cargo_lock_audit()
 
     if not decoded then
       vim.schedule(function()
-        vim.notify("cargo-audit: failed to parse JSON", vim.log.levels.ERROR)
+        vim.notify('cargo-audit: failed to parse JSON', vim.log.levels.ERROR)
       end)
       return
     end
 
-    local lines = vim.split(lock_str, "\n", { plain = true })
+    local lines = vim.split(lock_str, '\n', { plain = true })
     local packages = M.parse_cargo_lock(lines)
     local audits = decoded.vulnerabilities.list
     if not audits then
-      vim.notify("cargo-audit: JSON parse error", vim.log.levels.ERROR)
+      vim.notify('cargo-audit: JSON parse error', vim.log.levels.ERROR)
       return
     end
 
     M.log.info(packages)
     M.log.info(audits)
-    M.log.info("running build_diagnostics")
+    M.log.info('running build_diagnostics')
     local diags = M.build_diagnostics(packages, audits)
-    M.log.info("finished build_diagnostics")
+    M.log.info('finished build_diagnostics')
 
     vim.schedule(function()
       vim.diagnostic.set(M.cargo_lock_ns, 0, diags, {})
-      vim.notify("cargo-audit: diagnostics updated", vim.log.levels.INFO)
+      vim.notify('cargo-audit: diagnostics updated', vim.log.levels.INFO)
     end)
   end)
 end
@@ -364,11 +371,11 @@ end
 ---@param path string path to the file to read in
 ---@return string|nil lines from the file
 function M.read_file_as_str(path)
-  local fd = io.open(path, "r")
+  local fd = io.open(path, 'r')
   if not fd then
     return nil
   end
-  local data = fd:read("*a")
+  local data = fd:read('*a')
   fd:close()
   return data
 end
