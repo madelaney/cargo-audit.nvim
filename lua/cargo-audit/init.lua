@@ -342,13 +342,15 @@ function M.run_cargo_audit(lockfile)
   local cmd = { 'cargo', 'audit', '--json', '--file', lockfile }
 
   vim.system(cmd, { text = true }, function(obj)
-    done = true
     if obj.code ~= 0 then
       error('cargo-audit failed with code ' .. obj.code)
     end
 
     local stdout = obj.stdout or ''
+    stdout = stdout:gsub('%s*$', '')
+
     result = stdout
+    done = true
   end)
 
   -- crude wait: for use in ad‑hoc scripts/mappings only
