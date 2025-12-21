@@ -306,6 +306,7 @@ function M.cargo_lock_audit()
   end
 
   local data = M.run_cargo_audit(lockfile)
+  vim.notify(data)
   local lines = vim.split(lock_str, '\n', { plain = true })
   local packages = M.parse_cargo_lock(lines)
   local audits = data.vulnerabilities.list
@@ -332,10 +333,10 @@ function M.read_file_as_str(path)
   return data
 end
 
---- Run cargo-audit against a given cargo lockfile
---- @param lockfile string Path to the lock file to run cargo audit against
---- @return table|nil result Parsed JSON or nil on failure
---- @return string|nil err Error message if any
+---Run cargo-audit against a given cargo lockfile
+---@param lockfile string Path to the lock file to run cargo audit against
+---@return table|nil result Parsed JSON or nil on failure
+---@return string|nil err Error message if any
 function M.run_cargo_audit(lockfile)
   local cmd = { 'cargo', 'audit', '--json', '--file', lockfile }
   local result = vim.system(cmd, { text = true }):wait()
