@@ -1,5 +1,3 @@
-local json = require('json')
-
 local M = {}
 
 M.cargo_toml_ns = vim.api.nvim_create_namespace('cargo_toml')
@@ -356,7 +354,7 @@ function M.run_cargo_audit(lockfile)
     vim.wait(10)
   end
 
-  return json.decode(result) or {}
+  return vim.json.decode(result) or {}
 end
 
 return M
