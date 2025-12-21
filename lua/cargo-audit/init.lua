@@ -346,7 +346,9 @@ function M.run_cargo_audit(lockfile)
     if obj.code ~= 0 then
       error('cargo-audit failed with code ' .. obj.code)
     end
-    result = table.concat(obj.stdout, '')
+
+    local stdout = obj.stdout or ''
+    result = stdout
   end)
 
   -- crude wait: for use in ad‑hoc scripts/mappings only
