@@ -1,3 +1,5 @@
+local json = require('json')
+
 local M = {}
 
 M.cargo_toml_ns = vim.api.nvim_create_namespace('cargo_toml')
@@ -5,6 +7,7 @@ M.cargo_lock_ns = vim.api.nvim_create_namespace('cargo_lock')
 
 function M.setup(opts)
   M.opts = opts or {}
+  M.log = opts.logger or require('plenary.log')
 
   vim.api.nvim_create_autocmd({ 'BufWritePost', 'BufReadPost' }, {
     pattern = 'Cargo.toml',
@@ -191,33 +194,11 @@ function M.cargo_toml_audit()
     return
   end
 
-  vim.system({ 'cargo', 'audit', '--json', '--file', cargo_lock }, { text = true }, function(res)
-    if res.code ~= 0 and res.code ~= 1 then
-      vim.schedule(function()
-        vim.notify('cargo-audit failed: ' .. res.stderr, vim.log.levels.ERROR)
-      end)
-      return
-    end
+  local data = M.run_cargo_audit(cargo_lock)
+  local diagnostics = M.advisories_to_diagnostics(cargo_toml, data)
 
-    local decoded = nil
-    pcall(function()
-      decoded = vim.json.decode(res.stdout)
-    end)
-
-    if not decoded then
-      vim.schedule(function()
-        vim.notify('cargo-audit: failed to parse JSON', vim.log.levels.ERROR)
-      end)
-      return
-    end
-
-    local diagnostics = M.advisories_to_diagnostics(cargo_toml, decoded)
-
-    vim.schedule(function()
-      vim.diagnostic.set(M.cargo_toml_ns, 0, diagnostics, {})
-      vim.notify('cargo-audit: diagnostics updated', vim.log.levels.INFO)
-    end)
-  end)
+  vim.diagnostic.set(M.cargo_toml_ns, 0, diagnostics, {})
+  vim.notify('cargo-audit: diagnostics updated', vim.log.levels.INFO)
 end
 
 --- Read a file in a safe async behavior
@@ -326,45 +307,18 @@ function M.cargo_lock_audit()
     return
   end
 
-  vim.system({ 'cargo', 'audit', '--json', '--file', lockfile }, { text = true }, function(res)
-    if res.code ~= 0 and res.code ~= 1 then
-      vim.schedule(function()
-        vim.notify('cargo-audit failed: ' .. res.stderr, vim.log.levels.ERROR)
-      end)
-      return
-    end
+  local data = M.run_cargo_audit(lockfile)
+  local lines = vim.split(lock_str, '\n', { plain = true })
+  local packages = M.parse_cargo_lock(lines)
+  local audits = data.vulnerabilities.list
+  if not audits then
+    vim.notify('cargo-audit: JSON parse error', vim.log.levels.ERROR)
+    return
+  end
 
-    local decoded = nil
-    pcall(function()
-      decoded = vim.json.decode(res.stdout)
-    end)
-
-    if not decoded then
-      vim.schedule(function()
-        vim.notify('cargo-audit: failed to parse JSON', vim.log.levels.ERROR)
-      end)
-      return
-    end
-
-    local lines = vim.split(lock_str, '\n', { plain = true })
-    local packages = M.parse_cargo_lock(lines)
-    local audits = decoded.vulnerabilities.list
-    if not audits then
-      vim.notify('cargo-audit: JSON parse error', vim.log.levels.ERROR)
-      return
-    end
-
-    M.log.info(packages)
-    M.log.info(audits)
-    M.log.info('running build_diagnostics')
-    local diags = M.build_diagnostics(packages, audits)
-    M.log.info('finished build_diagnostics')
-
-    vim.schedule(function()
-      vim.diagnostic.set(M.cargo_lock_ns, 0, diags, {})
-      vim.notify('cargo-audit: diagnostics updated', vim.log.levels.INFO)
-    end)
-  end)
+  local diags = M.build_diagnostics(packages, audits)
+  vim.diagnostic.set(M.cargo_lock_ns, 0, diags, {})
+  vim.notify('cargo-audit: diagnostics updated', vim.log.levels.INFO)
 end
 
 --- Read a file as a string
@@ -378,6 +332,31 @@ function M.read_file_as_str(path)
   local data = fd:read('*a')
   fd:close()
   return data
+end
+
+--- Run cargo-audit against a given cargo lockfile
+---@param lockfile string Path to the lock file to run cargo audit against
+---@return table JSON data as returned by cargo-audit
+function M.run_cargo_audit(lockfile)
+  local result = ''
+  local done = false
+
+  local cmd = { 'cargo', 'audit', '--json', '--file', lockfile }
+
+  vim.system(cmd, { text = true }, function(obj)
+    done = true
+    if obj.code ~= 0 then
+      error('cargo-audit failed with code ' .. obj.code)
+    end
+    result = table.concat(obj.stdout, '')
+  end)
+
+  -- crude wait: for use in ad‑hoc scripts/mappings only
+  while not done do
+    vim.wait(10)
+  end
+
+  return json.decode(result) or {}
 end
 
 return M
