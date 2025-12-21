@@ -333,32 +333,23 @@ function M.read_file_as_str(path)
 end
 
 --- Run cargo-audit against a given cargo lockfile
----@param lockfile string Path to the lock file to run cargo audit against
----@return table JSON data as returned by cargo-audit
+--- @param lockfile string Path to the lock file to run cargo audit against
+--- @return table|nil result Parsed JSON or nil on failure
+--- @return string|nil err Error message if any
 function M.run_cargo_audit(lockfile)
-  local result
-  local done = false
-
   local cmd = { 'cargo', 'audit', '--json', '--file', lockfile }
+  local result = vim.system(cmd, { text = true }):wait()
 
-  vim.system(cmd, { text = true }, function(obj)
-    if obj.code ~= 0 then
-      error('cargo-audit failed with code ' .. obj.code)
-    end
-
-    local stdout = obj.stdout or ''
-    stdout = stdout:gsub('%s*$', '')
-
-    result = stdout
-    done = true
-  end)
-
-  -- crude wait: for use in ad‑hoc scripts/mappings only
-  while not done do
-    vim.wait(10)
+  if result.code ~= 0 then
+    return nil, result.stderr
   end
 
-  return vim.json.decode(result) or {}
+  local ok, data = pcall(vim.json.decode, result.stdout)
+  if not ok then
+    return nil, 'Failed to decode JSON'
+  end
+
+  return data
 end
 
 return M
