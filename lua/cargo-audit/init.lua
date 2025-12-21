@@ -336,7 +336,7 @@ end
 ---@param lockfile string Path to the lock file to run cargo audit against
 ---@return table JSON data as returned by cargo-audit
 function M.run_cargo_audit(lockfile)
-  local result = ''
+  local result
   local done = false
 
   local cmd = { 'cargo', 'audit', '--json', '--file', lockfile }
