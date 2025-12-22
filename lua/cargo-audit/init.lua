@@ -30,17 +30,20 @@ end
 function M.cargo_metadata(cwd, cb)
   vim.system({ 'cargo', 'metadata', '--format-version', '1', '--no-deps' }, { cwd = cwd, text = true }, function(res)
     if not res.stdout then
-      cb(nil, res.stderr)
+      vim.schedule(function()
+        cb(nil, res.stderr)
+      end)
       return
     end
 
     local ok, data = pcall(vim.json.decode, res.stdout)
-    if not ok then
-      cb(nil, 'failed to parse cargo metadata')
-      return
-    end
-
-    cb(data, nil)
+    vim.schedule(function()
+      if not ok then
+        cb(nil, 'failed to parse cargo metadata')
+      else
+        cb(data, nil)
+      end
+    end)
   end)
 end
 
@@ -99,34 +102,36 @@ function M.run(opts)
         return
       end
 
-      local vulns = data.vulnerabilities and data.vulnerabilities.list or {}
+      vim.schedule(function()
+        local vulns = data.vulnerabilities and data.vulnerabilities.list or {}
 
-      -- clear all Cargo.toml diagnostics
-      for _, pkg in ipairs(metadata.packages) do
-        local bufnr = vim.fn.bufnr(pkg.manifest_path, true)
-        vim.diagnostic.reset(M.ns, bufnr)
-      end
-
-      for _, v in ipairs(vulns) do
-        local adv = v.advisory
-        local pkg = v.package
-        local dependents = dep_index[pkg.name] or {}
-
-        for _, entry in ipairs(dependents) do
-          local bufnr, lnum = M.find_dependency_line(entry.package.manifest_path, entry.dependency)
-
-          vim.diagnostic.set(M.ns, bufnr, {
-            {
-              lnum = lnum,
-              col = 0,
-              severity = vim.diagnostic.severity.ERROR,
-              source = 'cargo-audit',
-              code = adv.id,
-              message = string.format('%s (%s %s)', adv.title, pkg.name, pkg.version),
-            },
-          }, { append = true })
+        -- clear all Cargo.toml diagnostics
+        for _, pkg in ipairs(metadata.packages) do
+          local bufnr = vim.fn.bufnr(pkg.manifest_path, true)
+          vim.diagnostic.reset(M.ns, bufnr)
         end
-      end
+
+        for _, v in ipairs(vulns) do
+          local adv = v.advisory
+          local pkg = v.package
+          local dependents = dep_index[pkg.name] or {}
+
+          for _, entry in ipairs(dependents) do
+            local bufnr, lnum = M.find_dependency_line(entry.package.manifest_path, entry.dependency)
+
+            vim.diagnostic.set(M.ns, bufnr, {
+              {
+                lnum = lnum,
+                col = 0,
+                severity = vim.diagnostic.severity.ERROR,
+                source = 'cargo-audit',
+                code = adv.id,
+                message = string.format('%s (%s %s)', adv.title, pkg.name, pkg.version),
+              },
+            }, { append = true })
+          end
+        end
+      end)
     end)
   end)
 end
