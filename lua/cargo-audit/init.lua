@@ -109,6 +109,8 @@ function M.run(opts)
     M.log.debug('calling cargo-audit')
     vim.system({ 'cargo', 'audit', '--json' }, { cwd = cwd, text = true }, function(res)
       if not res.stdout then
+        M.log.error('running cargo audit failed')
+        M.log.error(res.stderr)
         return
       end
 
