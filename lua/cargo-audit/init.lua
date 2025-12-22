@@ -113,4 +113,28 @@ function M.run(opts)
   end)
 end
 
+function M.setup(opts)
+  M.opts = opts or {}
+  M.log = opts.logger or require('plenary.log').new({
+    plugin = 'cargo-audit',
+    level = 'debug',
+  })
+
+  M.log.debug('adding call back for cargo.toml files')
+  vim.api.nvim_create_autocmd({ 'BufWritePost', 'BufReadPost' }, {
+    pattern = 'Cargo.toml',
+    callback = function()
+      M.run()
+    end,
+  })
+
+  M.log.debug('adding call back for cargo.lock files')
+  vim.api.nvim_create_autocmd({ 'BufReadPost', 'FileChangedShellPost' }, {
+    pattern = 'Cargo.lock',
+    callback = function()
+      M.run()
+    end,
+  })
+end
+
 return M
