@@ -377,7 +377,7 @@ function M.run_cargo_audit(lockfile, opts)
   opts = opts or {}
 
   M.log.debug('attempting to run cargo-audit on ' .. lockfile)
-  vim.system({ 'cargo', 'audit', '--json', '--lockfile', lockfile }, {
+  vim.system({ 'cargo', 'audit', '--json', '--file', lockfile }, {
     cwd = opts.cwd,
     text = true,
   }, function(result)
