@@ -5,8 +5,12 @@ M.cargo_lock_ns = vim.api.nvim_create_namespace('cargo_lock')
 
 function M.setup(opts)
   M.opts = opts or {}
-  M.log = opts.logger or require('plenary.log')
+  M.log = opts.logger or require('plenary.log').new({
+    plugin = 'cargo-audit',
+    level = 'debug',
+  })
 
+  M.log.debug('adding call back for cargo.toml files')
   vim.api.nvim_create_autocmd({ 'BufWritePost', 'BufReadPost' }, {
     pattern = 'Cargo.toml',
     callback = function()
@@ -14,6 +18,7 @@ function M.setup(opts)
     end,
   })
 
+  M.log.debug('adding call back for cargo.lock files')
   vim.api.nvim_create_autocmd({ 'BufReadPost', 'FileChangedShellPost' }, {
     pattern = 'Cargo.lock',
     callback = function()
@@ -371,12 +376,14 @@ end
 function M.run_cargo_audit(lockfile, opts)
   opts = opts or {}
 
+  M.log.debug('attempting to run cargo-audit on ' .. lockfile)
   vim.system({ 'cargo', 'audit', '--json', '--lockfile', lockfile }, {
     cwd = opts.cwd,
     text = true,
   }, function(result)
     -- Non-zero exit is common when vulnerabilities are found
     if result.code ~= 0 and not result.stdout then
+      M.log.error(result.stderr)
       if opts.on_exit then
         opts.on_exit(nil, result.stderr)
       end
@@ -385,6 +392,8 @@ function M.run_cargo_audit(lockfile, opts)
 
     local ok, decoded = pcall(vim.json.decode, result.stdout)
     if not ok then
+      M.log.error('failed to parse cargo-audit JSON')
+      M.log.error(result.stdout)
       if opts.on_exit then
         opts.on_exit(nil, 'Failed to parse cargo-audit JSON')
       end
