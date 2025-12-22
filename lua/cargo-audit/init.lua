@@ -338,21 +338,35 @@ end
 ---@return table|nil result Parsed JSON or nil on failure
 ---@return string|nil err Error message if any
 function M.run_cargo_audit(lockfile)
-  local cmd = { 'cargo', 'audit', '--json', '--file', lockfile }
-  local result = vim.system(cmd, { text = true }):wait()
+  local opts = {
+    '--lockfile',
+    lockfile,
+  }
 
-  if result.code ~= 0 then
-    vim.notify(result.stderr, vim.log.levels.ERROR)
-    return {}
-  end
+  vim.system({ 'cargo', 'audit', '--json' }, {
+    cwd = opts.cwd,
+    text = true,
+  }, function(result)
+    -- Non-zero exit is common when vulnerabilities are found
+    if result.code ~= 0 and not result.stdout then
+      if opts.on_exit then
+        opts.on_exit(nil, result.stderr)
+      end
+      return
+    end
 
-  local ok, data = pcall(vim.json.decode, result.stdout)
-  if not ok then
-    vim.notify('failed to decode json', vim.log.levels.ERROR)
-    return {}
-  end
+    local ok, decoded = pcall(vim.json.decode, result.stdout)
+    if not ok then
+      if opts.on_exit then
+        opts.on_exit(nil, 'Failed to parse cargo-audit JSON')
+      end
+      return
+    end
 
-  return data
+    if opts.on_exit then
+      opts.on_exit(decoded, nil)
+    end
+  end)
 end
 
 return M
