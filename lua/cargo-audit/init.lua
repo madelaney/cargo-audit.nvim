@@ -342,12 +342,14 @@ function M.run_cargo_audit(lockfile)
   local result = vim.system(cmd, { text = true }):wait()
 
   if result.code ~= 0 then
-    return nil, result.stderr
+    vim.notify(result.stderr, vim.log.levels.ERROR)
+    return {}
   end
 
   local ok, data = pcall(vim.json.decode, result.stdout)
   if not ok then
-    return nil, 'Failed to decode JSON'
+    vim.notify('failed to decode json', vim.log.levels.ERROR)
+    return {}
   end
 
   return data
