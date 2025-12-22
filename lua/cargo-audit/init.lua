@@ -5,6 +5,10 @@ M.cargo_lock_ns = vim.api.nvim_create_namespace('cargo_lock')
 
 function M.setup(opts)
   M.opts = opts or {}
+  M.log = opts.log or require('plenary.log').new({
+    plugin = 'cargo-audit',
+    level = 'debug',
+  })
 
   vim.api.nvim_create_autocmd({ 'BufWritePost', 'BufReadPost' }, {
     pattern = 'Cargo.toml',
@@ -214,6 +218,7 @@ function M.cargo_toml_audit()
     local diagnostics = M.advisories_to_diagnostics(cargo_toml, decoded)
 
     vim.schedule(function()
+      vim.diagnostic.reset(M.cargo_toml_ns, 0)
       vim.diagnostic.set(M.cargo_toml_ns, 0, diagnostics, {})
       vim.notify('cargo-audit: diagnostics updated', vim.log.levels.INFO)
     end)
@@ -326,8 +331,11 @@ function M.cargo_lock_audit()
     return
   end
 
-  vim.system({ 'cargo', 'audit', '--json', '--file', lockfile }, { text = true }, function(res)
+  local cmd = { 'cargo', 'audit', '--json', '--file', lockfile }
+
+  vim.system(cmd, { text = true }, function(res)
     if res.code ~= 0 and res.code ~= 1 then
+      M.log.error('cargo-audit failed: ' .. res.stderr, vim.log.levels.ERROR)
       vim.schedule(function()
         vim.notify('cargo-audit failed: ' .. res.stderr, vim.log.levels.ERROR)
       end)
@@ -340,6 +348,7 @@ function M.cargo_lock_audit()
     end)
 
     if not decoded then
+      M.log.error('json cargo-audit json failed')
       vim.schedule(function()
         vim.notify('cargo-audit: failed to parse JSON', vim.log.levels.ERROR)
       end)
@@ -350,17 +359,23 @@ function M.cargo_lock_audit()
     local packages = M.parse_cargo_lock(lines)
     local audits = decoded.vulnerabilities.list
     if not audits then
+      M.log.error('failed to parse vulnerabilities list')
       vim.notify('cargo-audit: JSON parse error', vim.log.levels.ERROR)
       return
     end
 
-    M.log.info(packages)
-    M.log.info(audits)
-    M.log.info('running build_diagnostics')
+    M.log.debug('packages listing')
+    M.log.debug(packages)
+
+    M.log.debug('audit listing')
+    M.log.debug(audits)
+
+    M.log.debug('running build_diagnostics')
     local diags = M.build_diagnostics(packages, audits)
-    M.log.info('finished build_diagnostics')
+    M.log.debug('finished build_diagnostics')
 
     vim.schedule(function()
+      vim.diagnostic.reset(M.cargo_lock_ns, 0)
       vim.diagnostic.set(M.cargo_lock_ns, 0, diags, {})
       vim.notify('cargo-audit: diagnostics updated', vim.log.levels.INFO)
     end)
