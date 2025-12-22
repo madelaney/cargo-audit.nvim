@@ -192,7 +192,12 @@ function M.cargo_toml_audit()
     return
   end
 
-  local data = M.run_cargo_audit(cargo_lock)
+  local data, error = M.run_cargo_audit(cargo_lock)
+  if error then
+    vim.notify(error, vim.log.levels.ERROR)
+    return
+  end
+
   local diagnostics = M.advisories_to_diagnostics(cargo_toml, data)
 
   vim.diagnostic.set(M.cargo_toml_ns, 0, diagnostics, {})
@@ -305,11 +310,16 @@ function M.cargo_lock_audit()
     return
   end
 
-  local data = M.run_cargo_audit(lockfile)
-  vim.notify(data)
+  local data, error = M.run_cargo_audit(lockfile)
+  if error then
+    vim.notify(error, vim.log.levels.ERROR)
+    return
+  end
+
   local lines = vim.split(lock_str, '\n', { plain = true })
   local packages = M.parse_cargo_lock(lines)
   local audits = data.vulnerabilities.list
+
   if not audits then
     vim.notify('cargo-audit: JSON parse error', vim.log.levels.ERROR)
     return
