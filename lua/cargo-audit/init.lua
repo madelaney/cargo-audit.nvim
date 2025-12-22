@@ -14,7 +14,8 @@ function M.setup(opts)
   vim.api.nvim_create_autocmd({ 'BufWritePost', 'BufReadPost' }, {
     pattern = 'Cargo.toml',
     callback = function()
-      M.cargo_toml_audit()
+      -- M.cargo_toml_audit()
+      M.run()
     end,
   })
 
