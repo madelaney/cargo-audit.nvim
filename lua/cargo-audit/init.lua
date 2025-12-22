@@ -6,17 +6,21 @@ function M.cargo_metadata(cwd, cb)
   M.log.debug('starting cargo_metadata')
   vim.system({ 'cargo', 'metadata', '--format-version', '1', '--no-deps' }, { cwd = cwd, text = true }, function(res)
     if not res.stdout then
+      M.log.error(res.stderr)
       vim.schedule(function()
         cb(nil, res.stderr)
       end)
       return
     end
 
+    M.log.debug(res.stdout)
     local ok, data = pcall(vim.json.decode, res.stdout)
     vim.schedule(function()
       if ok then
+        M.log.debug(data)
         cb(data, nil)
       else
+        M.log.error(ok)
         cb(nil, 'failed to parse cargo metadata')
       end
     end)
