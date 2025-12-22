@@ -74,6 +74,8 @@ function M.on_audit_complete(metadata, audit_json)
     local pkg = v.package
     local dependents = dep_index[pkg.name] or {}
 
+    M.log.debug('adding ' .. pkg)
+
     for _, entry in ipairs(dependents) do
       local bufnr, lnum = M.find_dependency_line(entry.package.manifest_path, entry.dependency)
 
@@ -98,6 +100,7 @@ function M.run(opts)
   M.log.debug('calling cargo_metadata')
   M.cargo_metadata(cwd, function(metadata, err)
     if err then
+      M.log.error('running cargo metadata failed')
       M.log.error(err)
       vim.notify(err, vim.log.levels.ERROR)
       return
