@@ -310,24 +310,44 @@ function M.cargo_lock_audit()
     return
   end
 
-  local data, error = M.run_cargo_audit(lockfile)
-  if error then
-    vim.notify(error, vim.log.levels.ERROR)
-    return
-  end
+  M.run_cargo_audit(lockfile, {
+    on_exit = function(result, err)
+      if err then
+        vim.notify(err, vim.log.levels.ERROR)
+        return
+      end
 
-  local lines = vim.split(lock_str, '\n', { plain = true })
-  local packages = M.parse_cargo_lock(lines)
-  local audits = data.vulnerabilities.list
+      local lines = vim.split(lock_str, '\n', { plain = true })
+      local packages = M.parse_cargo_lock(lines)
 
-  if not audits then
-    vim.notify('cargo-audit: JSON parse error', vim.log.levels.ERROR)
-    return
-  end
+      -- Example: list vulnerabilities
+      local vulns = result.vulnerabilities and result.vulnerabilities.list or {}
+      -- for _, v in ipairs(vulns) do
+      --   print(v.advisory.id, v.advisory.title)
+      -- end
 
-  local diags = M.build_diagnostics(packages, audits)
-  vim.diagnostic.set(M.cargo_lock_ns, 0, diags, {})
-  vim.notify('cargo-audit: diagnostics updated', vim.log.levels.INFO)
+      local diags = M.build_diagnostics(packages, vulns)
+      vim.diagnostic.set(M.cargo_lock_ns, 0, diags, {})
+      vim.notify('cargo-audit: diagnostics updated', vim.log.levels.INFO)
+    end,
+  })
+  -- if error then
+  --   vim.notify(error, vim.log.levels.ERROR)
+  --   return
+  -- end
+  --
+  -- local lines = vim.split(lock_str, '\n', { plain = true })
+  -- local packages = M.parse_cargo_lock(lines)
+  -- local audits = data.vulnerabilities.list
+  --
+  -- if not audits then
+  --   vim.notify('cargo-audit: JSON parse error', vim.log.levels.ERROR)
+  --   return
+  -- end
+  --
+  -- local diags = M.build_diagnostics(packages, audits)
+  -- vim.diagnostic.set(M.cargo_lock_ns, 0, diags, {})
+  -- vim.notify('cargo-audit: diagnostics updated', vim.log.levels.INFO)
 end
 
 --- Read a file as a string
@@ -345,15 +365,13 @@ end
 
 ---Run cargo-audit against a given cargo lockfile
 ---@param lockfile string Path to the lock file to run cargo audit against
+---@param opts table List of options to pass into the system calls
 ---@return table|nil result Parsed JSON or nil on failure
 ---@return string|nil err Error message if any
-function M.run_cargo_audit(lockfile)
-  local opts = {
-    '--lockfile',
-    lockfile,
-  }
+function M.run_cargo_audit(lockfile, opts)
+  opts = opts or {}
 
-  vim.system({ 'cargo', 'audit', '--json' }, {
+  vim.system({ 'cargo', 'audit', '--json', '--lockfile', lockfile }, {
     cwd = opts.cwd,
     text = true,
   }, function(result)
