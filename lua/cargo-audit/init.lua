@@ -325,7 +325,8 @@ end
 function M.cargo_lock_audit()
   local lockfile = vim.api.nvim_buf_get_name(0)
 
-  local lock_str = M.read_file_as_str(lockfile)
+  local lines = vim.api.nvim_buf_get_lines(0, 0, -1, false)
+  local lock_str = table.concat(lines, '\n')
   if not lock_str then
     vim.notify('cargo-audit: Could not read ' .. lockfile, vim.log.levels.ERROR)
     return
@@ -380,19 +381,6 @@ function M.cargo_lock_audit()
       vim.notify('cargo-audit: diagnostics updated', vim.log.levels.INFO)
     end)
   end)
-end
-
---- Read a file as a string
----@param path string path to the file to read in
----@return string|nil lines from the file
-function M.read_file_as_str(path)
-  local fd = io.open(path, 'r')
-  if not fd then
-    return nil
-  end
-  local data = fd:read('*a')
-  fd:close()
-  return data
 end
 
 return M
