@@ -3,6 +3,7 @@ local M = {}
 M.ns = vim.api.nvim_create_namespace('cargo-audit')
 
 function M.cargo_metadata(cwd, cb)
+  M.log.debug('starting cargo_metadata')
   vim.system({ 'cargo', 'metadata', '--format-version', '1', '--no-deps' }, { cwd = cwd, text = true }, function(res)
     if not res.stdout then
       vim.schedule(function()
@@ -90,12 +91,15 @@ function M.run(opts)
   opts = opts or {}
   local cwd = opts.cwd or vim.fn.getcwd()
 
+  M.log.debug('calling cargo_metadata')
   M.cargo_metadata(cwd, function(metadata, err)
     if err then
+      M.log.error(err)
       vim.notify(err, vim.log.levels.ERROR)
       return
     end
 
+    M.log.debug('calling cargo-audit')
     vim.system({ 'cargo', 'audit', '--json' }, { cwd = cwd, text = true }, function(res)
       if not res.stdout then
         return
@@ -103,11 +107,13 @@ function M.run(opts)
 
       local ok, audit_json = pcall(vim.json.decode, res.stdout)
       if not ok then
+        M.log.error('failed to parse cargo-audit JSON')
         return
       end
 
       vim.schedule(function()
         M.on_audit_complete(metadata, audit_json)
+        M.log.debug('finished on_audit_complete')
       end)
     end)
   end)
