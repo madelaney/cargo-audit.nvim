@@ -1,7 +1,6 @@
 local M = {}
 
-M.cargo_toml_ns = vim.api.nvim_create_namespace('cargo_toml')
-M.cargo_lock_ns = vim.api.nvim_create_namespace('cargo_lock')
+M.cargo_audit_ns = vim.api.nvim_create_namespace('cargo-audit')
 
 function M.setup(opts)
   M.opts = opts or {}
@@ -109,7 +108,7 @@ function M.run(opts)
         -- clear all Cargo.toml diagnostics
         for _, pkg in ipairs(metadata.packages) do
           local bufnr = vim.fn.bufnr(pkg.manifest_path, true)
-          vim.diagnostic.reset(M.ns, bufnr)
+          vim.diagnostic.reset(M.cargo_audit_ns, bufnr)
         end
 
         for _, v in ipairs(vulns) do
@@ -120,7 +119,7 @@ function M.run(opts)
           for _, entry in ipairs(dependents) do
             local bufnr, lnum = M.find_dependency_line(entry.package.manifest_path, entry.dependency)
 
-            vim.diagnostic.set(M.ns, bufnr, {
+            vim.diagnostic.set(M.cargo_audit_ns, bufnr, {
               {
                 lnum = lnum,
                 col = 0,
