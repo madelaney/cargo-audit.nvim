@@ -321,7 +321,7 @@ function M.cargo_lock_audit()
       local packages = M.parse_cargo_lock(lines)
 
       -- Example: list vulnerabilities
-      local vulns = result.vulnerabilities and result.vulnerabilities.list or {}
+      local vulns = result.vulnerabilities.list or {}
       -- for _, v in ipairs(vulns) do
       --   print(v.advisory.id, v.advisory.title)
       -- end
