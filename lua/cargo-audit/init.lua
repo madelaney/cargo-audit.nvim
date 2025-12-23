@@ -1,386 +1,127 @@
+local cargo = require('cargo-audit.cargo')
+local diagnostics = require('cargo-audit.diagnostics')
+local log = require('cargo-audit.log')
+local parser = require('cargo-audit.parser')
+local util = require('cargo-audit.util')
+
 local M = {}
 
-M.cargo_toml_ns = vim.api.nvim_create_namespace('cargo_toml')
-M.cargo_lock_ns = vim.api.nvim_create_namespace('cargo_lock')
-
-function M.setup(opts)
-  M.opts = opts or {}
-  M.log = opts.log or require('plenary.log').new({
-    plugin = 'cargo-audit',
-    level = 'debug',
-  })
-
-  vim.api.nvim_create_autocmd({ 'BufWritePost', 'BufReadPost' }, {
-    pattern = 'Cargo.toml',
-    callback = function()
-      M.cargo_toml_audit()
-    end,
-  })
-
-  vim.api.nvim_create_autocmd({ 'BufReadPost', 'FileChangedShellPost' }, {
-    pattern = 'Cargo.lock',
-    callback = function()
-      M.cargo_lock_audit()
-    end,
-  })
-end
-
---- Search a Cargo.toml for a line that defines a dependency
----@param cargo_toml string Cargo,tink to parse
----@param package_name string Name of the package to search for
----@return number|nil Line number (-1) of the dependency or nil
-function M.find_dependency_lnum(cargo_toml, package_name)
-  if not M.lines then
-    M.lines = M.read_file(cargo_toml)
+---Run cargo-audit in an async fashion
+---@param cb fun(result: CargoAuditReport|nil, err: string|nil)
+function M.scan_async(cb)
+  local root = util.find_root()
+  if not root then
+    log.log.warn('could not find Cargo.lock, or Cargo.toml')
+    cb(nil, 'No Cargo.toml or Cargo.lock found')
+    return
   end
 
-  local lines = M.lines
-  local in_deps_section = false
-
-  for i, line in ipairs(lines) do
-    local section = line:match('^%s*%[(.-)%]%s*$')
-    if section then
-      in_deps_section = (section == 'dependencies' or section == 'dev-dependencies' or section == 'build-dependencies')
-    end
-
-    if in_deps_section then
-      -- match lines like:
-      -- serde = "1.0"
-      -- serde = { version = "1.0" }
-      -- serde = { git = "...", rev = "..." }
-      if line:match('^%s*' .. package_name .. '%s*=') then
-        return i - 1
+  log.log.debug('calling cargo.audit module')
+  cargo.audit(root, function(data, err)
+    ---@class data CargoAuditReport
+    vim.schedule(function()
+      if err or data == nil then
+        log.log.debug('cargo.audit returned an error, or data is nill')
+        cb(nil, err)
+        return
       end
+
+      ---@diagnostic disable-next-line:param-type-mismatch
+      local vulns = parser.collect_vulnerabilities(data)
+
+      cb(vulns)
+    end)
+  end)
+end
+
+---Run `cargo-audit` and add diagnostics to the buffer.
+function M.scan_and_diagnose()
+  diagnostics.clear()
+  log.log.info('running cargo audit ...')
+
+  M.scan_async(function(vulns, err)
+    if err then
+      log.log.error(err)
+      vim.notify(err, vim.log.levels.ERROR)
+      return
     end
-  end
 
-  return nil
-end
-
-function M.find_file(file, parent)
-  for path in vim.fs.parents(parent) do
-    local cargo = path .. '/' .. file
-    if vim.fn.filereadable(cargo) == 1 then
-      return cargo
+    if vulns == nil then
+      log.log.warn('vulns is nil, please check the log for an error')
+    elseif #vulns == 0 then
+      log.log.info('no rust dependency issues found')
+      vim.notify('No Rust dependency issues found', vim.log.levels.INFO)
+      return
+    else
+      log.log.info('publishing ' .. #vulns .. ' to buffer')
+      diagnostics.publish(vulns)
+      vim.notify(
+        string.format('Found %d Rust dependency issues', #vulns),
+        vim.log.levels.WARN
+      )
     end
-  end
-  return nil
+  end)
 end
 
---- Search up the tree for a Cargo.toml
----@param start string Directory to start looking for a Cargo.toml for
----@return string|nil The path to Cargo.toml or nil
-function M.find_cargo_toml(start)
-  return M.find_file('Cargo.toml', start)
-end
-
---- Search up the tree for a Cargo.lock
----@param start string Directory to start looking for a Cargo.lock for
----@return string|nil The path to Cargo.lock or nil
-function M.find_cargo_lock(start)
-  return M.find_file('Cargo.lock', start)
-end
-
---- Convert `cargo-audit` json to diagnostics table
----@param cargo string Cargo.toml file to parse
----@param report table JSON response from `cargo-audit`
----@return table Diagnostics table set
-function M.advisories_to_diagnostics(cargo, report)
-  local diags = {}
-
-  if not report or not report.vulnerabilities then
-    return diags
-  end
-
-  local list = report.vulnerabilities.list or {}
-
-  local dependencies = 0
-
-  M.lines = M.read_file(cargo)
-  for i, line in ipairs(M.lines) do
-    if line == '[dependencies]' then
-      dependencies = i - 1
-    end
-  end
-
-  for _, vuln in ipairs(list) do
-    local advisory = vuln.advisory or {}
-    local pkg = vuln.package or {}
-
-    table.insert(diags, {
-      lnum = M.find_dependency_lnum(cargo, pkg.name) or dependencies,
-      end_lnum = 0,
-      col = 0,
-      end_col = 0,
-      severity = vim.diagnostic.severity.WARN,
-      message = string.format(
-        '[%s] %s (pkg: %s %s)',
-        advisory.id or 'UNKNOWN',
-        advisory.title or 'No title',
-        pkg.name or 'unknown',
-        pkg.version or 'unknown'
-      ),
-      source = 'cargo-audit',
-    })
-  end
-
-  local advisories = {
-    yanked = {
-      message = 'Package %s %s has been YANKED from crates.io',
-      severity = vim.diagnostic.severity.WARN,
+---Setup the plugin scaffolding
+---@param config CargoAuditPluginSettings list of options to override
+function M.setup(config)
+  local default_config = {
+    toml = {
+      enabled = true,
     },
-    unsound = {
-      severity = vim.diagnostic.severity.HINT,
-    },
-    unmaintained = {
-      message = 'Package %s is not maintained on crates.io',
-      severity = vim.diagnostic.severity.WARN,
-    },
-    other = {
-      message = 'Cargo-audit warning for %s %s: %s',
-      severity = vim.diagnostic.severity.HINT,
+    lock = {
+      enabled = true,
     },
   }
 
-  local warnings = report.warnings or {}
+  M.opts = vim.tbl_deep_extend('force', default_config, config)
 
-  for key, config in pairs(advisories) do
-    for _, entry in ipairs(warnings[key] or {}) do
-      local pkg = entry.package or {}
-      local advisory = entry.advisory or {}
+  log.setup(config.log or {})
 
-      local name = pkg.name or 'unknown'
-      local version = pkg.version or 'unknown'
+  log.log.info('cargo-audit initialized')
 
-      local lnum = M.find_dependency_lnum(cargo, name) or 0
+  local icons = require('cargo-audit.severity')
 
-      local message
-      if key == 'yanked' then
-        message = config.message:format(version, name)
-      elseif key == 'unmaintained' then
-        message = config.message:format(name)
-      else
-        message = string.format('%s %s', version, advisory.title)
-      end
+  vim.fn.sign_define(
+    'CargoAuditError',
+    { text = icons.icons.critical, texthl = 'DiagnosticSignError' }
+  )
+  vim.fn.sign_define(
+    'CargoAuditWarn',
+    { text = icons.icons.medium, texthl = 'DiagnosticSignWarn' }
+  )
+  vim.fn.sign_define(
+    'CargoAuditInfo',
+    { text = icons.icons.low, texthl = 'DiagnosticSignInfo' }
+  )
+  vim.fn.sign_define(
+    'CargoAuditHint',
+    { text = icons.icons.hint, texthl = 'DiagnosticSignHint' }
+  )
 
-      table.insert(diags, {
-        lnum = lnum,
-        end_lnum = lnum,
-        col = 0,
-        severity = config.severity,
-        message = message,
-        source = 'cargo-audit',
-      })
-    end
+  if M.opts.toml.enabled then
+    vim.api.nvim_create_autocmd({ 'BufWritePost', 'BufReadPost' }, {
+      pattern = 'Cargo.toml',
+      callback = function()
+        M.scan_and_diagnose()
+      end,
+    })
   end
 
-  return diags
-end
-
---- Run `cargo-audit` and add results to diagnostics
-function M.cargo_toml_audit()
-  local current_file = vim.api.nvim_buf_get_name(0)
-  local cargo_toml = current_file
-  local cargo_lock = M.find_cargo_lock(current_file)
-
-  --- since this is triggered by a nvim_create_autocmd event on the Cargo.toml,
-  --- it's unlikely we won't find a Cargo.toml but lets be sure.
-  if not cargo_toml then
-    vim.notify('cargo-audit: Could not find Cargo.toml', vim.log.levels.ERROR)
-    return
-  --- Cargo.lock may *not* be in the same directory as Cargo.toml so we'll have
-  --- to search the tree for a Cargo.lock
-  elseif not cargo_lock then
-    vim.notify('cargo-audit: Could not find Cargo.lock', vim.log.levels.ERROR)
-    return
+  if M.opts.lock.enabled then
+    vim.api.nvim_create_autocmd({ 'BufReadPost', 'FileChangedShellPost' }, {
+      pattern = 'Cargo.lock',
+      callback = function()
+        M.scan_and_diagnose()
+      end,
+    })
   end
 
-  vim.system({ 'cargo', 'audit', '--json', '--file', cargo_lock }, { text = true }, function(res)
-    if res.code ~= 0 and res.code ~= 1 then
-      vim.schedule(function()
-        vim.notify('cargo-audit failed: ' .. res.stderr, vim.log.levels.ERROR)
-      end)
-      return
-    end
-
-    local decoded = nil
-    pcall(function()
-      decoded = vim.json.decode(res.stdout)
-    end)
-
-    if not decoded then
-      vim.schedule(function()
-        vim.notify('cargo-audit: failed to parse JSON', vim.log.levels.ERROR)
-      end)
-      return
-    end
-
-    local diagnostics = M.advisories_to_diagnostics(cargo_toml, decoded)
-
-    vim.schedule(function()
-      vim.diagnostic.reset(M.cargo_toml_ns, 0)
-      vim.diagnostic.set(M.cargo_toml_ns, 0, diagnostics, {})
-      vim.notify('cargo-audit: diagnostics updated', vim.log.levels.INFO)
-    end)
-  end)
-end
-
---- Read a file in a safe async behavior
----@param path string file to read
----@return table Lines of the file
-function M.read_file(path)
-  local uv = vim.uv or vim.loop
-
-  local fd = uv.fs_open(path, 'r', 438)
-  if not fd then
-    return {}
-  end
-
-  local stat = uv.fs_fstat(fd)
-  if not stat then
-    uv.fs_close(fd)
-    return {}
-  end
-
-  local data = uv.fs_read(fd, stat.size, 0)
-  uv.fs_close(fd)
-
-  if not data then
-    return {}
-  end
-
-  local lines = {}
-  for line in data:gmatch('([^\n]*)\n?') do
-    table.insert(lines, line)
-  end
-  return lines
-end
-
---- Parse the Cargo.lock toml file
----@param lines string[] lines from the cargo.lock file
----@return table list of packages
-function M.parse_cargo_lock(lines)
-  local packages = {}
-  local current = {}
-
-  for i, line in ipairs(lines) do
-    local name = line:match('^%s*name%s*=%s*"(.-)"')
-    if name then
-      current = { name = name, line = i }
-    end
-
-    local version = line:match('^%s*version%s*=%s*"(.-)"')
-    if version and current.name then
-      current.version = version
-      table.insert(packages, current)
-      current = {}
-    end
-  end
-
-  return packages
-end
-
---- Convert a list of packages to diagnostics entries
----@param packages table list of packages from Cargo.lock
----@param audits table list of audits from `cargo-audit`
----@return table diagnostics entries
-function M.build_diagnostics(packages, audits)
-  local diags = {}
-
-  for _, vuln in ipairs(audits) do
-    local name = vuln.package.name
-    local version = vuln.package.version
-    local match = nil
-
-    -- match package in parsed Cargo.lock
-    for _, pkg in ipairs(packages) do
-      if pkg.name == name and pkg.version == version then
-        match = pkg
-        break
-      end
-    end
-
-    if match then
-      table.insert(diags, {
-        lnum = match.line - 1, -- 0-based for diagnostics
-        col = 0,
-        severity = vim.diagnostic.severity.WARN,
-        source = 'cargo-audit',
-        message = string.format(
-          'Vulnerability %s: %s (%s %s)\n%s',
-          vuln.advisory.id,
-          vuln.advisory.title or '',
-          name,
-          version,
-          vuln.advisory.description or ''
-        ),
-      })
-    end
-  end
-
-  return diags
-end
-
---- Run diagnostics checks
-function M.cargo_lock_audit()
-  local lockfile = vim.api.nvim_buf_get_name(0)
-
-  local lines = vim.api.nvim_buf_get_lines(0, 0, -1, false)
-  local lock_str = table.concat(lines, '\n')
-  if not lock_str then
-    vim.notify('cargo-audit: Could not read ' .. lockfile, vim.log.levels.ERROR)
-    return
-  end
-
-  local cmd = { 'cargo', 'audit', '--json', '--file', lockfile }
-
-  vim.system(cmd, { text = true }, function(res)
-    if res.code ~= 0 and res.code ~= 1 then
-      M.log.error('cargo-audit failed: ' .. res.stderr, vim.log.levels.ERROR)
-      vim.schedule(function()
-        vim.notify('cargo-audit failed: ' .. res.stderr, vim.log.levels.ERROR)
-      end)
-      return
-    end
-
-    local decoded = nil
-    pcall(function()
-      decoded = vim.json.decode(res.stdout)
-    end)
-
-    if not decoded then
-      M.log.error('json cargo-audit json failed')
-      vim.schedule(function()
-        vim.notify('cargo-audit: failed to parse JSON', vim.log.levels.ERROR)
-      end)
-      return
-    end
-
-    local lines = vim.split(lock_str, '\n', { plain = true })
-    local packages = M.parse_cargo_lock(lines)
-    local audits = decoded.vulnerabilities.list
-    if not audits then
-      M.log.error('failed to parse vulnerabilities list')
-      vim.notify('cargo-audit: JSON parse error', vim.log.levels.ERROR)
-      return
-    end
-
-    M.log.debug('packages listing')
-    M.log.debug(packages)
-
-    M.log.debug('audit listing')
-    M.log.debug(audits)
-
-    M.log.debug('running build_diagnostics')
-    local diags = M.build_diagnostics(packages, audits)
-    M.log.debug('finished build_diagnostics')
-
-    vim.schedule(function()
-      vim.diagnostic.reset(M.cargo_lock_ns, 0)
-      vim.diagnostic.set(M.cargo_lock_ns, 0, diags, {})
-      vim.notify('cargo-audit: diagnostics updated', vim.log.levels.INFO)
-    end)
-  end)
+  local telescope = require('cargo-audit.telescope')
+  vim.api.nvim_create_user_command('CargoAudit', function()
+    telescope.show_vulns()
+  end, { desc = 'Show RustSec vulnerabilities in Telescope' })
 end
 
 return M

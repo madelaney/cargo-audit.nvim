@@ -1,0 +1,3 @@
+---@class CargoAuditPluginLogger
+---@field level? "warn"|"error"|"debug"|"info"
+---@field use_console? boolean

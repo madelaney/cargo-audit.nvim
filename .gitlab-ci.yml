@@ -12,13 +12,32 @@ default:
 stages:
   - test
 
-test:style:
+test:stylua:
   stage: test
   tags:
     - aarch64
   image:
     name: balenalib/aarch64-alpine:latest
     pull_policy: if-not-present
-  script:
+  before_script:
     - apk add stylua make
-    - stylua --check .
+  script:
+    - make stylua
+
+test:luacheck:
+  stage: test
+  tags:
+    - aarch64
+  image:
+    name: balenalib/aarch64-alpine:latest
+    pull_policy: if-not-present
+  before_script:
+    - apk add luacheck make
+  script:
+    - make luacheck
+  artifacts:
+    untracked: false
+    when: on_success
+    access: all
+    reports:
+      junit: luacheck-report.xml
