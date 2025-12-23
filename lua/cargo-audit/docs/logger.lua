@@ -1,0 +1,2 @@
+---@class CargoAuditPluginLogger
+---@field level? "warn"|"error"|"debug"|"info"

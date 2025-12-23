@@ -1,4 +1,4 @@
-column_width = 120
+column_width = 80
 line_endings = "Unix"
 indent_type = "Spaces"
 indent_width = 2
@@ -6,3 +6,5 @@ quote_style = "AutoPreferSingle"
 no_call_parentheses = false
 call_parentheses = "Always"
 
+[sort_requires]
+enabled = true

@@ -1,0 +1,37 @@
+local util = require('cargo-audit.util')
+local log = require('cargo-audit.log').log
+
+local M = {}
+
+---Runs cargo-audit
+---@param root string the root directory of our rust code.
+---@param cb function the call back function for after cargo-audit finishes
+function M.cargo_audit(root, cb)
+  util.async_cmd(
+    {
+      'cargo',
+      'audit',
+      '--json',
+    },
+    root,
+    function(out, err, code)
+      -- cargo audit exits with 1 when vulnerabilities are found
+      if not out or out == '' then
+        log.error('cargo audit produced no output (code=%s)', code)
+        cb(nil, err or 'cargo audit failed')
+        return
+      end
+
+      local ok, decoded = pcall(vim.json.decode, out)
+      if not ok then
+        log.error('Failed to decode cargo audit JSON')
+        cb(nil, 'Invalid cargo audit output')
+        return
+      end
+
+      cb(decoded)
+    end
+  )
+end
+
+return M
