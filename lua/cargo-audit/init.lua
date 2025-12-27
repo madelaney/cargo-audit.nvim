@@ -1,4 +1,4 @@
-local audit = require('cargo-audit.audit')
+local cargo = require('cargo-audit.cargo')
 local diagnostics = require('cargo-audit.diagnostics')
 local log = require('cargo-audit.log')
 local parser = require('cargo-audit.parser')
@@ -16,7 +16,7 @@ function M.scan_async(cb)
     return
   end
 
-  audit.cargo_audit(root, function(data, err)
+  cargo.audit(root, function(data, err)
     ---@class data CargoAuditReport
     vim.schedule(function()
       if err then
@@ -33,7 +33,7 @@ end
 ---Run `cargo-audit` and add diagnostics to the buffer.
 function M.scan_and_diagnose()
   diagnostics.clear()
-  vim.notify('Running cargo audit…', vim.log.levels.INFO)
+  vim.notify('running cargo audit…', vim.log.levels.INFO)
   log.log.info('running cargo audit ...')
 
   M.scan_async(function(vulns, err)

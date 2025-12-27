@@ -6,7 +6,7 @@ local M = {}
 ---Runs cargo-audit
 ---@param root string the root directory of our rust code.
 ---@param cb function the call back function for after cargo-audit finishes
-function M.cargo_audit(root, cb)
+function M.audit(root, cb)
   util.async_cmd(
     {
       'cargo',
@@ -32,6 +32,21 @@ function M.cargo_audit(root, cb)
       cb(decoded)
     end
   )
+end
+
+---Get cargo-metadata content
+---@param root string the root directory to run `cargo-metadata` in.
+---@param cb function the funtion to call when cargo-metadata finishes
+function M.metadata(root, cb)
+  local cmd = { 'cargo', 'metadata', '--format-version=1', '--locked' }
+  util.async_cmd(cmd, root, function(out, err)
+    ---@class out CargoMetadata
+    if not out then
+      cb(nil, err)
+      return
+    end
+    cb(vim.json.decode(out))
+  end)
 end
 
 return M
