@@ -6,24 +6,6 @@ local util = require('cargo-audit.util')
 
 local M = {}
 
----Merge two tables
----@param lhv table the left hand values
----@param rhv table the right hand values; will overwrite left values
----@return table merges content
-local function config_merge(lhv, rhv)
-  local result = vim.deepcopy(lhv)
-
-  for k, v in pairs(rhv) do
-    if type(v) == 'table' and type(result[k]) == 'table' then
-      result[k] = config_merge(result[k], v)
-    else
-      result[k] = v
-    end
-  end
-
-  return result
-end
-
 ---Run cargo-audit in an async fashion
 ---@param cb function the callback to run when cargo-audit finishes
 function M.scan_async(cb)
@@ -78,18 +60,20 @@ function M.scan_and_diagnose()
 end
 
 ---Setup the plugin scaffolding
----@param opts CargoAuditPluginSettings list of options to override
-function M.setup(opts)
-  M.opts = config_merge({
+---@param config CargoAuditPluginSettings list of options to override
+function M.setup(config)
+  local default_config = {
     toml = {
       enabled = true,
     },
     lock = {
       enabled = true,
     },
-  }, opts)
+  }
 
-  log.setup(opts.log or {})
+  M.opts = vim.tbl_deep_extend('force', default_config, config)
+
+  log.setup(config.log or {})
 
   log.log.info('cargo-audit initialized')
 

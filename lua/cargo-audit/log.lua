@@ -5,15 +5,18 @@ local M = {}
 ---Plugin wide logger
 M.log = Log.new({
   plugin = 'cargo-audit',
-  level = 'info',
+  level = 'warn',
   use_console = false,
 })
 
 ---Setup the logger
 ---@param opts CargoAuditPluginLogger value overrides
 function M.setup(opts)
-  if opts and opts.log_level then
-    M.log.level = opts.level
+  if opts then
+    if opts.level then
+      M.log.level = opts.level
+    end
+    M.log.use_console = opts.use_console
   end
 end
 
