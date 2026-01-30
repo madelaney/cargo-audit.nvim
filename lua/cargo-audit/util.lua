@@ -6,12 +6,12 @@ local M = {}
 ---@return string|nil
 function M.find_root()
   local markers = { 'Cargo.toml', 'Cargo.lock' }
-  local cwd = vim.fn.getcwd()
+  local dir = vim.fs.dirname(vim.api.nvim_buf_get_name(0))
 
   for _, marker in ipairs(markers) do
     local found = vim.fs.find(marker, {
       upward = true,
-      path = cwd,
+      path = dir,
       stop = vim.loop.os_homedir(),
     })
     if #found > 0 then
