@@ -12,6 +12,8 @@ function M.audit(root, cb)
       'cargo',
       'audit',
       '--json',
+      '--color',
+      'never',
     },
     root,
     function(out, err, code)
@@ -38,7 +40,14 @@ end
 ---@param root string the root directory to run `cargo-metadata` in.
 ---@param cb function the funtion to call when cargo-metadata finishes
 function M.metadata(root, cb)
-  local cmd = { 'cargo', 'metadata', '--format-version=1', '--locked' }
+  local cmd = {
+    'cargo',
+    'metadata',
+    '--format-version=1',
+    '--locked',
+    '--color',
+    'never',
+  }
   util.async_cmd(cmd, root, function(out, err)
     ---@class out CargoMetadata
     if not out then
